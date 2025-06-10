@@ -1,0 +1,176 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  SYSTEM_USER
+  ORGANIZATION_MANAGER
+  REVIEWER
+}
+
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+model User {
+  id                String   @id @default(cuid())
+  email             String   @unique
+  password          String
+  firstName         String
+  lastName          String
+  role              UserRole @default(REVIEWER)
+  isActive          Boolean  @default(true)
+  emailVerified     Boolean  @default(false)
+  emailVerificationToken String?
+  passwordResetToken String?
+  passwordResetExpires DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  // Relations
+  organizationMemberships OrganizationMember[]
+  managedOrganizations    Organization[]       @relation("OrganizationManager")
+  projectReviewers        ProjectReviewer[]
+  comments                Comment[]
+  sentInvitations         Invitation[]         @relation("InvitationSender")
+  receivedInvitations     Invitation[]         @relation("InvitationReceiver")
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  website     String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  managerId String
+  manager   User   @relation("OrganizationManager", fields: [managerId], references: [id], onDelete: Cascade)
+  
+  members  OrganizationMember[]
+  projects Project[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(cuid())
+  userId         String
+  organizationId String
+  joinedAt       DateTime @default(now())
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, organizationId])
+  @@map("organization_members")
+}
+
+model Project {
+  id             String   @id @default(cuid())
+  name           String
+  description    String?
+  isActive       Boolean  @default(true)
+  currentTourId  String?  @unique
+  organizationId String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization     Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  tours            Tour[]
+  currentTour      Tour?             @relation("CurrentTour", fields: [currentTourId], references: [id])
+  projectReviewers ProjectReviewer[]
+
+  @@map("projects")
+}
+
+model ProjectReviewer {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  invitedAt DateTime @default(now())
+
+  // Relations
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId])
+  @@map("project_reviewers")
+}
+
+model Tour {
+  id          String   @id @default(cuid())
+  name        String
+  version     String
+  description String?
+  data        Json?    // Tour data/configuration
+  isActive    Boolean  @default(true)
+  projectId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  currentForProject Project? @relation("CurrentTour")
+  comments         Comment[]
+
+  @@unique([projectId, version])
+  @@map("tours")
+}
+
+model Comment {
+  id       String @id @default(cuid())
+  content  String
+  userId   String
+  tourId   String
+  parentId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tour     Tour      @relation(fields: [tourId], references: [id], onDelete: Cascade)
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id])
+  replies  Comment[] @relation("CommentReplies")
+
+  @@map("comments")
+}
+
+model Invitation {
+  id         String           @id @default(cuid())
+  email      String
+  role       UserRole
+  status     InvitationStatus @default(PENDING)
+  token      String           @unique
+  expiresAt  DateTime
+  senderId   String
+  receiverId String?
+  projectId  String?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  // Relations
+  sender   User @relation("InvitationSender", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User? @relation("InvitationReceiver", fields: [receiverId], references: [id])
+
+  @@map("invitations")
+} 
